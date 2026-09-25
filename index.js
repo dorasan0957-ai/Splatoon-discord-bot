@@ -43,6 +43,31 @@ const XP_ROLE_NAMES = [
 ];
 
 // ==============================
+// 日本語日時表示
+// ==============================
+
+function formatJapaneseDate(date) {
+    const weekdays = [
+        '日',
+        '月',
+        '火',
+        '水',
+        '木',
+        '金',
+        '土'
+    ];
+
+    return (
+        `${date.getFullYear()}年` +
+        `${date.getMonth() + 1}月` +
+        `${date.getDate()}日` +
+        `（${weekdays[date.getDay()]}）` +
+        `${String(date.getHours()).padStart(2, '0')}:` +
+        `${String(date.getMinutes()).padStart(2, '0')}`
+    );
+}
+
+// ==============================
 // 時刻処理
 // ==============================
 
@@ -52,7 +77,9 @@ function parseTime(input) {
     input = input.trim();
 
     // HH:MM
-    const timeMatch = input.match(/^(\d{1,2}):(\d{2})$/);
+    const timeMatch = input.match(
+        /^(\d{1,2}):(\d{2})$/
+    );
 
     if (timeMatch) {
         const hour = Number(timeMatch[1]);
@@ -135,7 +162,9 @@ function parseEndTime(input, startTime) {
     input = input.trim();
 
     // HH:MM
-    const timeMatch = input.match(/^(\d{1,2}):(\d{2})$/);
+    const timeMatch = input.match(
+        /^(\d{1,2}):(\d{2})$/
+    );
 
     if (timeMatch) {
         const hour = Number(timeMatch[1]);
@@ -214,7 +243,9 @@ function parseEndTime(input, startTime) {
 // 募集メッセージ更新
 // ==============================
 
-async function updateRecruitmentMessage(recruitment) {
+async function updateRecruitmentMessage(
+    recruitment
+) {
     try {
         const channel =
             await client.channels.fetch(
@@ -235,15 +266,16 @@ async function updateRecruitmentMessage(recruitment) {
                 .map(id => `<@${id}>`)
                 .join(' ');
 
+        // 日本語固定
         const startText =
-            `<t:${Math.floor(
-                recruitment.startTime.getTime() / 1000
-            )}:F>`;
+            formatJapaneseDate(
+                recruitment.startTime
+            );
 
         const endText =
-            `<t:${Math.floor(
-                recruitment.endTime.getTime() / 1000
-            )}:F>`;
+            formatJapaneseDate(
+                recruitment.endTime
+            );
 
         let statusText = '🟢 募集中';
 
@@ -286,7 +318,8 @@ async function updateRecruitmentMessage(recruitment) {
                 `${statusText}`
             )
             .setFooter({
-                text: `募集ID: ${recruitment.id}`
+                text:
+                    `募集ID: ${recruitment.id}`
             });
 
         const buttons =
@@ -378,15 +411,16 @@ async function closeRecruitment(
                 .map(id => `<@${id}>`)
                 .join(' ');
 
+        // 日本語固定
         const startText =
-            `<t:${Math.floor(
-                recruitment.startTime.getTime() / 1000
-            )}:F>`;
+            formatJapaneseDate(
+                recruitment.startTime
+            );
 
         const endText =
-            `<t:${Math.floor(
-                recruitment.endTime.getTime() / 1000
-            )}:F>`;
+            formatJapaneseDate(
+                recruitment.endTime
+            );
 
         const embed = new EmbedBuilder()
             .setTitle('🔒 スプラ募集終了')
@@ -416,7 +450,8 @@ async function closeRecruitment(
                 `${reason}`
             )
             .setFooter({
-                text: `募集ID: ${recruitment.id}`
+                text:
+                    `募集ID: ${recruitment.id}`
             });
 
         await message.edit({
@@ -436,7 +471,9 @@ async function closeRecruitment(
 // 開始処理
 // ==============================
 
-async function startRecruitment(recruitment) {
+async function startRecruitment(
+    recruitment
+) {
     if (
         recruitment.closed ||
         recruitment.started
@@ -459,7 +496,9 @@ async function startRecruitment(recruitment) {
 // タイマー設定
 // ==============================
 
-function setupRecruitmentTimers(recruitment) {
+function setupRecruitmentTimers(
+    recruitment
+) {
     const startDelay =
         recruitment.startTime.getTime() -
         Date.now();
@@ -472,7 +511,9 @@ function setupRecruitmentTimers(recruitment) {
         startRecruitment(recruitment);
     } else {
         setTimeout(() => {
-            startRecruitment(recruitment);
+            startRecruitment(
+                recruitment
+            );
         }, startDelay);
     }
 
@@ -533,7 +574,6 @@ async function createRecruitment(
 
         endTime,
 
-        // 複数ロールを保存
         roleIds,
 
         participants: [
@@ -550,25 +590,34 @@ async function createRecruitment(
         recruitment
     );
 
+    // ==============================
+    // メンション
+    // ==============================
+
     let mentionText = '@everyone';
 
-    // @everyoneを選んでいない場合
-    if (!roleIds.includes('everyone')) {
+    if (
+        !roleIds.includes('everyone')
+    ) {
         mentionText =
             roleIds
                 .map(id => `<@&${id}>`)
                 .join(' ');
     }
 
+    // ==============================
+    // 日本語日時
+    // ==============================
+
     const startText =
-        `<t:${Math.floor(
-            startTime.getTime() / 1000
-        )}:F>`;
+        formatJapaneseDate(
+            startTime
+        );
 
     const endText =
-        `<t:${Math.floor(
-            endTime.getTime() / 1000
-        )}:F>`;
+        formatJapaneseDate(
+            endTime
+        );
 
     const embed = new EmbedBuilder()
         .setTitle('🎮 スプラ募集')
@@ -598,7 +647,8 @@ async function createRecruitment(
             `🟢 募集中`
         )
         .setFooter({
-            text: `募集ID: ${recruitmentId}`
+            text:
+                `募集ID: ${recruitmentId}`
         });
 
     const buttons =
@@ -632,31 +682,39 @@ async function createRecruitment(
                     )
             );
 
-    const message =
-        await interaction.channel.send({
-            content: mentionText,
+    await interaction.channel.send({
+        content: mentionText,
 
-            embeds: [embed],
+        embeds: [embed],
 
-            components: [buttons],
+        components: [buttons],
 
-            allowedMentions: {
-                // @everyoneを選択した場合
-                parse:
-                    roleIds.includes('everyone')
-                        ? ['everyone']
-                        : [],
+        allowedMentions: {
+            parse:
+                roleIds.includes('everyone')
+                    ? ['everyone']
+                    : [],
 
-                // XPロールを選択した場合
-                roles:
-                    roleIds.includes('everyone')
-                        ? []
-                        : roleIds
-            }
+            roles:
+                roleIds.includes('everyone')
+                    ? []
+                    : roleIds
+        }
+    });
+
+    // メッセージを取得
+    const messages =
+        await interaction.channel.messages.fetch({
+            limit: 1
         });
 
-    recruitment.messageId =
-        message.id;
+    const message =
+        messages.first();
+
+    if (message) {
+        recruitment.messageId =
+            message.id;
+    }
 
     setupRecruitmentTimers(
         recruitment
@@ -969,7 +1027,7 @@ client.on(
                 }
 
                 // ==============================
-                // 複数選択可能
+                // 複数選択
                 // ==============================
 
                 const roleSelect =
@@ -1061,7 +1119,7 @@ client.on(
                 const selectedRoles =
                     interaction.values;
 
-                // @everyoneを含む場合
+                // @everyoneが含まれていた場合は
                 // 全員対象として扱う
                 const hasEveryone =
                     selectedRoles.includes(
@@ -1180,7 +1238,7 @@ client.on(
                 }
 
                 // ==========================
-                // @everyone
+                // @everyoneの場合
                 // ==========================
 
                 const isEveryone =
@@ -1189,8 +1247,10 @@ client.on(
                             'everyone'
                         );
 
-                // @everyoneでなければ
-                // XPロールをチェック
+                // ==========================
+                // XPロールの場合
+                // ==========================
+
                 if (!isEveryone) {
 
                     const member =
@@ -1200,8 +1260,8 @@ client.on(
                                 interaction.user.id
                             );
 
-                    // 複数ロールのどれかを
-                    // 持っていれば参加可能
+                    // 複数ロールのうち
+                    // 1つでも持っていれば参加可能
                     const hasRole =
                         recruitment.roleIds
                             .some(
