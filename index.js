@@ -30,10 +30,10 @@ const recruitments = new Map();
 client.recruitmentDrafts = new Map();
 
 // ==============================
-// 募集対象に使用できるロール
+// 募集対象に使用するXPロール
 // ==============================
 
-// この5つ以外のロールは募集対象に表示されません
+// この5つ以外のロールは募集画面に表示されません
 const XP_ROLE_NAMES = [
     '~19',
     '20~24',
@@ -46,7 +46,6 @@ const XP_ROLE_NAMES = [
 // 時刻処理
 // ==============================
 
-// 「21:30」または「2026/09/25 21:30」をDateに変換
 function parseTime(input) {
     const now = new Date();
 
@@ -132,11 +131,10 @@ function parseTime(input) {
 // 終了時刻処理
 // ==============================
 
-// HH:MMの場合は開始時刻と同じ日として扱う。
-// 終了時刻が開始時刻以前なら翌日。
 function parseEndTime(input, startTime) {
     input = input.trim();
 
+    // HH:MM
     const timeMatch = input.match(/^(\d{1,2}):(\d{2})$/);
 
     if (timeMatch) {
@@ -159,6 +157,7 @@ function parseEndTime(input, startTime) {
         date.setSeconds(0);
         date.setMilliseconds(0);
 
+        // 開始より前なら翌日
         if (date <= startTime) {
             date.setDate(date.getDate() + 1);
         }
@@ -534,6 +533,7 @@ async function createRecruitment(
 
         endTime,
 
+        // 複数ロールを保存
         roleIds,
 
         participants: [
@@ -550,12 +550,15 @@ async function createRecruitment(
         recruitment
     );
 
-    const roleMentions =
-        roleIds.length > 0
-            ? roleIds
+    let mentionText = '@everyone';
+
+    // @everyoneを選んでいない場合
+    if (!roleIds.includes('everyone')) {
+        mentionText =
+            roleIds
                 .map(id => `<@&${id}>`)
-                .join(' ')
-            : '@everyone';
+                .join(' ');
+    }
 
     const startText =
         `<t:${Math.floor(
@@ -631,15 +634,24 @@ async function createRecruitment(
 
     const message =
         await interaction.channel.send({
-            content: roleMentions,
+            content: mentionText,
+
             embeds: [embed],
+
             components: [buttons],
 
             allowedMentions: {
+                // @everyoneを選択した場合
                 parse:
-                    roleIds.length > 0
-                        ? ['roles']
-                        : ['everyone']
+                    roleIds.includes('everyone')
+                        ? ['everyone']
+                        : [],
+
+                // XPロールを選択した場合
+                roles:
+                    roleIds.includes('everyone')
+                        ? []
+                        : roleIds
             }
         });
 
@@ -914,20 +926,8 @@ client.on(
                     return;
                 }
 
-                if (
-                    endTime <= startTime
-                ) {
-                    await interaction.reply({
-                        content:
-                            '❌ 終了時刻は開始時刻より後にしてください。',
-                        ephemeral: true
-                    });
-
-                    return;
-                }
-
                 // ==============================
-                // 募集対象選択肢を作成
+                // 募集対象の選択肢
                 // ==============================
 
                 const roleOptions = [
@@ -939,22 +939,38 @@ client.on(
                     }
                 ];
 
-                for (const roleName of XP_ROLE_NAMES) {
+                for (
+                    const roleName
+                    of XP_ROLE_NAMES
+                ) {
 
                     const role =
-                        interaction.guild.roles.cache.find(
-                            r => r.name === roleName
-                        );
+                        interaction.guild
+                            .roles
+                            .cache
+                            .find(
+                                r =>
+                                    r.name ===
+                                    roleName
+                            );
 
                     if (role) {
                         roleOptions.push({
-                            label: roleName,
+                            label:
+                                roleName,
+
                             description:
-                                `ロール「${roleName}」を持つ人を募集対象にする`,
-                            value: role.id
+                                `ロール「${roleName}」を募集対象にする`,
+
+                            value:
+                                role.id
                         });
                     }
                 }
+
+                // ==============================
+                // 複数選択可能
+                // ==============================
 
                 const roleSelect =
                     new StringSelectMenuBuilder()
@@ -962,10 +978,12 @@ client.on(
                             `recruitment_roles_${interaction.user.id}`
                         )
                         .setPlaceholder(
-                            '募集対象を選択'
+                            '募集対象を選択（複数選択可）'
                         )
                         .setMinValues(1)
-                        .setMaxValues(6)
+                        .setMaxValues(
+                            roleOptions.length
+                        )
                         .addOptions(
                             roleOptions
                         );
@@ -991,7 +1009,9 @@ client.on(
 
                 await interaction.reply({
                     content:
-                        '募集対象を1つ選択してください。',
+                        '募集対象を選択してください。\n' +
+                        '複数選択できます。\n\n' +
+                        '※ @everyoneを選択すると、全員が対象になります。',
                     components: [row],
                     ephemeral: true
                 });
@@ -1038,14 +1058,20 @@ client.on(
                     return;
                 }
 
-                const selected =
-                    interaction.values[0];
+                const selectedRoles =
+                    interaction.values;
 
-                // @everyoneの場合はロール条件なし
+                // @everyoneを含む場合
+                // 全員対象として扱う
+                const hasEveryone =
+                    selectedRoles.includes(
+                        'everyone'
+                    );
+
                 const roleIds =
-                    selected === 'everyone'
-                        ? []
-                        : [selected];
+                    hasEveryone
+                        ? ['everyone']
+                        : selectedRoles;
 
                 await interaction.update({
                     content:
@@ -1154,12 +1180,18 @@ client.on(
                 }
 
                 // ==========================
-                // ロール条件
+                // @everyone
                 // ==========================
 
-                if (
-                    recruitment.roleIds.length > 0
-                ) {
+                const isEveryone =
+                    recruitment.roleIds
+                        .includes(
+                            'everyone'
+                        );
+
+                // @everyoneでなければ
+                // XPロールをチェック
+                if (!isEveryone) {
 
                     const member =
                         await interaction.guild
@@ -1168,6 +1200,8 @@ client.on(
                                 interaction.user.id
                             );
 
+                    // 複数ロールのどれかを
+                    // 持っていれば参加可能
                     const hasRole =
                         recruitment.roleIds
                             .some(
@@ -1181,7 +1215,7 @@ client.on(
                     if (!hasRole) {
                         await interaction.reply({
                             content:
-                                '❌ この募集に参加するためのロールを持っていません。',
+                                '❌ この募集に参加するためのXPロールを持っていません。',
                             ephemeral: true
                         });
 
@@ -1200,11 +1234,14 @@ client.on(
                         .length >=
                     recruitment.maxPlayers
                 ) {
+
                     await closeRecruitment(
                         recruitment,
                         '定員に達しました'
                     );
+
                 } else {
+
                     await updateRecruitmentMessage(
                         recruitment
                     );
