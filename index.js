@@ -2,6 +2,8 @@ const {
     Client,
     GatewayIntentBits,
     SlashCommandBuilder,
+    REST,
+    Routes,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
@@ -29,110 +31,22 @@ const recruitments = new Map();
 
 client.recruitmentDrafts = new Map();
 
-
 // ==============================
-// 日本時間（JST）処理
+// 時刻処理
 // ==============================
 
-const JST_OFFSET = 9 * 60 * 60 * 1000;
-
-
-// 現在の日本時間の日付を取得
-function getJSTNowParts() {
-
-    const jst = new Date(
-        Date.now() + JST_OFFSET
-    );
-
-    return {
-        year: jst.getUTCFullYear(),
-        month: jst.getUTCMonth() + 1,
-        day: jst.getUTCDate(),
-        hour: jst.getUTCHours(),
-        minute: jst.getUTCMinutes()
-    };
-}
-
-
-// JSTとしてDateを作成
-function createJSTDate(
-    year,
-    month,
-    day,
-    hour,
-    minute
-) {
-
-    return new Date(
-        Date.UTC(
-            year,
-            month - 1,
-            day,
-            hour - 9,
-            minute,
-            0,
-            0
-        )
-    );
-}
-
-
-// 日付が正しいか確認
-function isValidDate(
-    year,
-    month,
-    day
-) {
-
-    const date = new Date(
-        Date.UTC(
-            year,
-            month - 1,
-            day
-        )
-    );
-
-    return (
-        date.getUTCFullYear() === year &&
-        date.getUTCMonth() === month - 1 &&
-        date.getUTCDate() === day
-    );
-}
-
-
-// ==============================
-// 開始時刻
-// ==============================
-//
-// 例
-// 22:00
-// 2026/09/26 22:00
-//
-// すべて日本時間として扱う
-//
-
+// 「21:30」または「2026/09/25 21:30」をDateに変換
 function parseTime(input) {
-
     const now = new Date();
 
     input = input.trim();
 
-    // ==========================
     // HH:MM
-    // ==========================
-
-    const timeMatch =
-        input.match(
-            /^(\d{1,2}):(\d{2})$/
-        );
+    const timeMatch = input.match(/^(\d{1,2}):(\d{2})$/);
 
     if (timeMatch) {
-
-        const hour =
-            Number(timeMatch[1]);
-
-        const minute =
-            Number(timeMatch[2]);
+        const hour = Number(timeMatch[1]);
+        const minute = Number(timeMatch[2]);
 
         if (
             hour < 0 ||
@@ -143,69 +57,38 @@ function parseTime(input) {
             return null;
         }
 
-        const jst =
-            getJSTNowParts();
+        const date = new Date(now);
 
-        let date =
-            createJSTDate(
-                jst.year,
-                jst.month,
-                jst.day,
-                hour,
-                minute
-            );
+        date.setHours(hour);
+        date.setMinutes(minute);
+        date.setSeconds(0);
+        date.setMilliseconds(0);
 
         // すでに過ぎている時刻なら翌日
         if (date <= now) {
-
-            date =
-                new Date(
-                    date.getTime() +
-                    24 * 60 * 60 * 1000
-                );
+            date.setDate(date.getDate() + 1);
         }
 
         return date;
     }
 
-
-    // ==========================
     // YYYY/MM/DD HH:MM
-    // ==========================
-
-    const dateMatch =
-        input.match(
-            /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}):(\d{2})$/
-        );
+    const dateMatch = input.match(
+        /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}):(\d{2})$/
+    );
 
     if (dateMatch) {
-
-        const year =
-            Number(dateMatch[1]);
-
-        const month =
-            Number(dateMatch[2]);
-
-        const day =
-            Number(dateMatch[3]);
-
-        const hour =
-            Number(dateMatch[4]);
-
-        const minute =
-            Number(dateMatch[5]);
+        const year = Number(dateMatch[1]);
+        const month = Number(dateMatch[2]);
+        const day = Number(dateMatch[3]);
+        const hour = Number(dateMatch[4]);
+        const minute = Number(dateMatch[5]);
 
         if (
-            !isValidDate(
-                year,
-                month,
-                day
-            )
-        ) {
-            return null;
-        }
-
-        if (
+            month < 1 ||
+            month > 12 ||
+            day < 1 ||
+            day > 31 ||
             hour < 0 ||
             hour > 23 ||
             minute < 0 ||
@@ -214,14 +97,15 @@ function parseTime(input) {
             return null;
         }
 
-        const date =
-            createJSTDate(
-                year,
-                month,
-                day,
-                hour,
-                minute
-            );
+        const date = new Date(
+            year,
+            month - 1,
+            day,
+            hour,
+            minute,
+            0,
+            0
+        );
 
         if (date <= now) {
             return null;
@@ -233,40 +117,17 @@ function parseTime(input) {
     return null;
 }
 
-
-// ==============================
-// 終了時刻
-// ==============================
-//
-// 22:00 → 23:00
-//
-// 開始と同じ日として扱う。
-// 終了時刻が開始時刻より前なら翌日。
-//
-
-function parseEndTime(
-    input,
-    startTime
-) {
-
+// 終了時刻用
+// HH:MMの場合は開始時刻と同じ日として扱う。
+// 終了時刻が開始時刻以前なら翌日。
+function parseEndTime(input, startTime) {
     input = input.trim();
 
-    // ==========================
-    // HH:MM
-    // ==========================
-
-    const timeMatch =
-        input.match(
-            /^(\d{1,2}):(\d{2})$/
-        );
+    const timeMatch = input.match(/^(\d{1,2}):(\d{2})$/);
 
     if (timeMatch) {
-
-        const hour =
-            Number(timeMatch[1]);
-
-        const minute =
-            Number(timeMatch[2]);
+        const hour = Number(timeMatch[1]);
+        const minute = Number(timeMatch[2]);
 
         if (
             hour < 0 ||
@@ -277,82 +138,37 @@ function parseEndTime(
             return null;
         }
 
-        // 開始時刻をJSTに変換
-        const jstStart =
-            new Date(
-                startTime.getTime() +
-                JST_OFFSET
-            );
+        const date = new Date(startTime);
 
-        const year =
-            jstStart.getUTCFullYear();
+        date.setHours(hour);
+        date.setMinutes(minute);
+        date.setSeconds(0);
+        date.setMilliseconds(0);
 
-        const month =
-            jstStart.getUTCMonth() + 1;
-
-        const day =
-            jstStart.getUTCDate();
-
-        let date =
-            createJSTDate(
-                year,
-                month,
-                day,
-                hour,
-                minute
-            );
-
-        // 終了時刻が開始時刻以前なら翌日
         if (date <= startTime) {
-
-            date =
-                new Date(
-                    date.getTime() +
-                    24 * 60 * 60 * 1000
-                );
+            date.setDate(date.getDate() + 1);
         }
 
         return date;
     }
 
-
-    // ==========================
     // YYYY/MM/DD HH:MM
-    // ==========================
-
-    const dateMatch =
-        input.match(
-            /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}):(\d{2})$/
-        );
+    const dateMatch = input.match(
+        /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}):(\d{2})$/
+    );
 
     if (dateMatch) {
-
-        const year =
-            Number(dateMatch[1]);
-
-        const month =
-            Number(dateMatch[2]);
-
-        const day =
-            Number(dateMatch[3]);
-
-        const hour =
-            Number(dateMatch[4]);
-
-        const minute =
-            Number(dateMatch[5]);
+        const year = Number(dateMatch[1]);
+        const month = Number(dateMatch[2]);
+        const day = Number(dateMatch[3]);
+        const hour = Number(dateMatch[4]);
+        const minute = Number(dateMatch[5]);
 
         if (
-            !isValidDate(
-                year,
-                month,
-                day
-            )
-        ) {
-            return null;
-        }
-
-        if (
+            month < 1 ||
+            month > 12 ||
+            day < 1 ||
+            day > 31 ||
             hour < 0 ||
             hour > 23 ||
             minute < 0 ||
@@ -361,14 +177,15 @@ function parseEndTime(
             return null;
         }
 
-        const date =
-            createJSTDate(
-                year,
-                month,
-                day,
-                hour,
-                minute
-            );
+        const date = new Date(
+            year,
+            month - 1,
+            day,
+            hour,
+            minute,
+            0,
+            0
+        );
 
         if (date <= startTime) {
             return null;
@@ -380,17 +197,32 @@ function parseEndTime(
     return null;
 }
 
+// ==============================
+// 日本語日時表示
+// ==============================
+
+function formatJapaneseDate(date) {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+
+    const hour = String(
+        date.getHours()
+    ).padStart(2, '0');
+
+    const minute = String(
+        date.getMinutes()
+    ).padStart(2, '0');
+
+    return `${year}年${month}月${day}日 ${hour}:${minute}`;
+}
 
 // ==============================
 // 募集メッセージ更新
 // ==============================
 
-async function updateRecruitmentMessage(
-    recruitment
-) {
-
+async function updateRecruitmentMessage(recruitment) {
     try {
-
         const channel =
             await client.channels.fetch(
                 recruitment.channelId
@@ -405,91 +237,69 @@ async function updateRecruitmentMessage(
 
         if (!message) return;
 
-
         const participantMentions =
             recruitment.participants
-                .map(
-                    id => `<@${id}>`
-                )
+                .map(id => `<@${id}>`)
                 .join(' ');
 
-
+        // 日本語表示
         const startText =
-            `<t:${Math.floor(
-                recruitment.startTime.getTime() / 1000
-            )}:F>`;
-
+            formatJapaneseDate(
+                recruitment.startTime
+            );
 
         const endText =
-            `<t:${Math.floor(
-                recruitment.endTime.getTime() / 1000
-            )}:F>`;
+            formatJapaneseDate(
+                recruitment.endTime
+            );
 
-
-        let statusText =
-            '🟢 募集中';
-
+        let statusText = '🟢 募集中';
 
         if (recruitment.closed) {
-
-            statusText =
-                '🔒 募集終了';
-
+            statusText = '🔒 募集終了';
         } else if (recruitment.started) {
-
-            statusText =
-                '🟢 開始済み';
-
+            statusText = '🟢 開始済み';
         } else if (
             recruitment.participants.length >=
             recruitment.maxPlayers
         ) {
-
-            statusText =
-                '🔒 定員到達';
+            statusText = '🔒 定員到達';
         }
 
+        const embed = new EmbedBuilder()
+            .setTitle('🎮 スプラ募集')
+            .setDescription(
+                `**募集種類**\n` +
+                `${recruitment.type}\n\n` +
 
-        const embed =
-            new EmbedBuilder()
-                .setTitle(
-                    '🎮 スプラ募集'
-                )
-                .setDescription(
-                    `**募集種類**\n` +
-                    `${recruitment.type}\n\n` +
+                `**募集内容**\n` +
+                `${recruitment.content}\n\n` +
 
-                    `**募集内容**\n` +
-                    `${recruitment.content}\n\n` +
+                `**人数**\n` +
+                `${recruitment.participants.length}/${recruitment.maxPlayers}\n\n` +
 
-                    `**人数**\n` +
-                    `${recruitment.participants.length}/${recruitment.maxPlayers}\n\n` +
+                `**開始時刻**\n` +
+                `${startText}\n\n` +
 
-                    `**開始時刻**\n` +
-                    `${startText}\n\n` +
+                `**終了時刻**\n` +
+                `${endText}\n\n` +
 
-                    `**終了時刻**\n` +
-                    `${endText}\n\n` +
+                `**主催者**\n` +
+                `<@${recruitment.hostId}>\n\n` +
 
-                    `**主催者**\n` +
-                    `<@${recruitment.hostId}>\n\n` +
+                `**参加者**\n` +
+                `${participantMentions || 'なし'}\n\n` +
 
-                    `**参加者**\n` +
-                    `${participantMentions || 'なし'}\n\n` +
-
-                    `**状態**\n` +
-                    `${statusText}`
-                )
-                .setFooter({
-                    text:
-                        `募集ID: ${recruitment.id}`
-                });
-
+                `**状態**\n` +
+                `${statusText}`
+            )
+            .setFooter({
+                text: `募集ID: ${recruitment.id}`
+            });
 
         const buttons =
             new ActionRowBuilder()
                 .addComponents(
-
                     new ButtonBuilder()
                         .setCustomId(
                             `join_${recruitment.id}`
@@ -531,28 +341,18 @@ async function updateRecruitmentMessage(
                         )
                 );
 
-
         await message.edit({
-
-            embeds: [
-                embed
-            ],
-
-            components: [
-                buttons
-            ]
-
+            embeds: [embed],
+            components: [buttons]
         });
 
     } catch (error) {
-
         console.error(
             '募集メッセージ更新エラー:',
             error
         );
     }
 }
-
 
 // ==============================
 // 募集終了
@@ -562,15 +362,11 @@ async function closeRecruitment(
     recruitment,
     reason = '募集終了'
 ) {
-
-    if (recruitment.closed) {
-        return;
-    }
+    if (recruitment.closed) return;
 
     recruitment.closed = true;
 
     try {
-
         const channel =
             await client.channels.fetch(
                 recruitment.channelId
@@ -585,75 +381,59 @@ async function closeRecruitment(
 
         if (!message) return;
 
-
         const participantMentions =
             recruitment.participants
-                .map(
-                    id => `<@${id}>`
-                )
+                .map(id => `<@${id}>`)
                 .join(' ');
 
-
+        // 日本語表示
         const startText =
-            `<t:${Math.floor(
-                recruitment.startTime.getTime() / 1000
-            )}:F>`;
-
+            formatJapaneseDate(
+                recruitment.startTime
+            );
 
         const endText =
-            `<t:${Math.floor(
-                recruitment.endTime.getTime() / 1000
-            )}:F>`;
+            formatJapaneseDate(
+                recruitment.endTime
+            );
 
+        const embed = new EmbedBuilder()
+            .setTitle('🔒 スプラ募集終了')
+            .setDescription(
+                `**募集種類**\n` +
+                `${recruitment.type}\n\n` +
 
-        const embed =
-            new EmbedBuilder()
-                .setTitle(
-                    '🔒 スプラ募集終了'
-                )
-                .setDescription(
-                    `**募集種類**\n` +
-                    `${recruitment.type}\n\n` +
+                `**募集内容**\n` +
+                `${recruitment.content}\n\n` +
 
-                    `**募集内容**\n` +
-                    `${recruitment.content}\n\n` +
+                `**人数**\n` +
+                `${recruitment.participants.length}/${recruitment.maxPlayers}\n\n` +
 
-                    `**人数**\n` +
-                    `${recruitment.participants.length}/${recruitment.maxPlayers}\n\n` +
+                `**開始時刻**\n` +
+                `${startText}\n\n` +
 
-                    `**開始時刻**\n` +
-                    `${startText}\n\n` +
+                `**終了時刻**\n` +
+                `${endText}\n\n` +
 
-                    `**終了時刻**\n` +
-                    `${endText}\n\n` +
+                `**主催者**\n` +
+                `<@${recruitment.hostId}>\n\n` +
 
-                    `**主催者**\n` +
-                    `<@${recruitment.hostId}>\n\n` +
+                `**参加者**\n` +
+                `${participantMentions || 'なし'}\n\n` +
 
-                    `**参加者**\n` +
-                    `${participantMentions || 'なし'}\n\n` +
-
-                    `**終了理由**\n` +
-                    `${reason}`
-                )
-                .setFooter({
-                    text:
-                        `募集ID: ${recruitment.id}`
-                });
-
+                `**終了理由**\n` +
+                `${reason}`
+            )
+            .setFooter({
+                text: `募集ID: ${recruitment.id}`
+            });
 
         await message.edit({
-
-            embeds: [
-                embed
-            ],
-
+            embeds: [embed],
             components: []
-
         });
 
     } catch (error) {
-
         console.error(
             '募集終了エラー:',
             error
@@ -661,15 +441,11 @@ async function closeRecruitment(
     }
 }
 
-
 // ==============================
 // 開始処理
 // ==============================
 
-async function startRecruitment(
-    recruitment
-) {
-
+async function startRecruitment(recruitment) {
     if (
         recruitment.closed ||
         recruitment.started
@@ -688,15 +464,11 @@ async function startRecruitment(
     );
 }
 
-
 // ==============================
-// タイマー
+// タイマー設定
 // ==============================
 
-function setupRecruitmentTimers(
-    recruitment
-) {
-
+function setupRecruitmentTimers(recruitment) {
     const startDelay =
         recruitment.startTime.getTime() -
         Date.now();
@@ -705,44 +477,23 @@ function setupRecruitmentTimers(
         recruitment.endTime.getTime() -
         Date.now();
 
-
     if (startDelay <= 0) {
-
-        startRecruitment(
-            recruitment
-        );
-
+        startRecruitment(recruitment);
     } else {
-
-        setTimeout(
-            () => {
-
-                startRecruitment(
-                    recruitment
-                );
-
-            },
-            startDelay
-        );
+        setTimeout(() => {
+            startRecruitment(recruitment);
+        }, startDelay);
     }
-
 
     if (endDelay > 0) {
-
-        setTimeout(
-            () => {
-
-                closeRecruitment(
-                    recruitment,
-                    '設定した終了時刻になりました'
-                );
-
-            },
-            endDelay
-        );
+        setTimeout(() => {
+            closeRecruitment(
+                recruitment,
+                '設定した終了時刻になりました'
+            );
+        }, endDelay);
     }
 }
-
 
 // ==============================
 // 募集作成
@@ -752,7 +503,6 @@ async function createRecruitment(
     interaction,
     data
 ) {
-
     const {
         type,
         content,
@@ -762,17 +512,13 @@ async function createRecruitment(
         roleIds
     } = data;
 
-
     const recruitmentId =
         `${Date.now()}_${Math.random()
             .toString(36)
             .slice(2, 8)}`;
 
-
     const recruitment = {
-
-        id:
-            recruitmentId,
+        id: recruitmentId,
 
         guildId:
             interaction.guildId,
@@ -802,85 +548,68 @@ async function createRecruitment(
             interaction.user.id
         ],
 
-        closed:
-            false,
+        closed: false,
 
-        started:
-            false
+        started: false
     };
-
 
     recruitments.set(
         recruitmentId,
         recruitment
     );
 
-
-    // ロールがあればロール、
-    // なければ @everyone
     const roleMentions =
         roleIds.length > 0
             ? roleIds
-                .map(
-                    id => `<@&${id}>`
-                )
+                .map(id => `<@&${id}>`)
                 .join(' ')
             : '@everyone';
 
-
+    // 日本語表示
     const startText =
-        `<t:${Math.floor(
-            startTime.getTime() / 1000
-        )}:F>`;
-
+        formatJapaneseDate(
+            startTime
+        );
 
     const endText =
-        `<t:${Math.floor(
-            endTime.getTime() / 1000
-        )}:F>`;
+        formatJapaneseDate(
+            endTime
+        );
 
+    const embed = new EmbedBuilder()
+        .setTitle('🎮 スプラ募集')
+        .setDescription(
+            `**募集種類**\n` +
+            `${type}\n\n` +
 
-    const embed =
-        new EmbedBuilder()
-            .setTitle(
-                '🎮 スプラ募集'
-            )
-            .setDescription(
+            `**募集内容**\n` +
+            `${content}\n\n` +
 
-                `**募集種類**\n` +
-                `${type}\n\n` +
+            `**人数**\n` +
+            `1/${maxPlayers}\n\n` +
 
-                `**募集内容**\n` +
-                `${content}\n\n` +
+            `**開始時刻**\n` +
+            `${startText}\n\n` +
 
-                `**人数**\n` +
-                `1/${maxPlayers}\n\n` +
+            `**終了時刻**\n` +
+            `${endText}\n\n` +
 
-                `**開始時刻**\n` +
-                `${startText}\n\n` +
+            `**主催者**\n` +
+            `<@${interaction.user.id}>\n\n` +
 
-                `**終了時刻**\n` +
-                `${endText}\n\n` +
+            `**参加者**\n` +
+            `<@${interaction.user.id}>\n\n` +
 
-                `**主催者**\n` +
-                `<@${interaction.user.id}>\n\n` +
-
-                `**参加者**\n` +
-                `<@${interaction.user.id}>\n\n` +
-
-                `**状態**\n` +
-                `🟢 募集中`
-            )
-            .setFooter({
-                text:
-                    `募集ID: ${recruitmentId}`
-            });
-
+            `**状態**\n` +
+            `🟢 募集中`
+        )
+        .setFooter({
+            text: `募集ID: ${recruitmentId}`
+        });
 
     const buttons =
         new ActionRowBuilder()
             .addComponents(
-
                 new ButtonBuilder()
                     .setCustomId(
                         `join_${recruitmentId}`
@@ -909,113 +638,63 @@ async function createRecruitment(
                     )
             );
 
-
     const message =
         await interaction.channel.send({
-
-            content:
-                roleMentions,
-
-            embeds: [
-                embed
-            ],
-
-            components: [
-                buttons
-            ],
+            content: roleMentions,
+            embeds: [embed],
+            components: [buttons],
 
             allowedMentions: {
-
                 parse:
                     roleIds.length > 0
                         ? ['roles']
                         : ['everyone']
-
             }
-
         });
-
 
     recruitment.messageId =
         message.id;
-
 
     setupRecruitmentTimers(
         recruitment
     );
 }
 
-
 // ==============================
 // Bot起動
 // ==============================
 
-client.once(
-    'ready',
-    async () => {
+client.once('ready', async () => {
+    console.log(
+        `${client.user.tag} でログインしました！`
+    );
 
-        console.log(
-            `${client.user.tag} でログインしました！`
+    const commands = [
+        new SlashCommandBuilder()
+            .setName('募集')
+            .setDescription(
+                'スプラの募集を作成します'
+            )
+    ];
+
+    try {
+        // 現在のコマンド一覧に同期
+        // 古いグローバルコマンドを削除
+        await client.application.commands.set(
+            commands
         );
 
+        console.log(
+            'スラッシュコマンドを同期しました！'
+        );
 
-        // 現在使うコマンド
-        const commands = [
-
-            new SlashCommandBuilder()
-                .setName('募集')
-                .setDescription(
-                    'スプラの募集を作成します'
-                )
-
-        ];
-
-
-        try {
-
-            // ==========================
-            // 古いグローバルコマンドを削除
-            // ==========================
-
-            await client.application.commands.set(
-                []
-            );
-
-
-            // ==========================
-            // 各サーバーの古いコマンドを削除
-            // その後、最新版だけ登録
-            // ==========================
-
-            for (
-                const guild
-                of client.guilds.cache.values()
-            ) {
-
-                await guild.commands.set(
-                    commands
-                );
-
-                console.log(
-                    `サーバー「${guild.name}」のコマンドを更新しました`
-                );
-            }
-
-
-            console.log(
-                'スラッシュコマンドを同期しました！'
-            );
-
-        } catch (error) {
-
-            console.error(
-                'コマンド同期エラー:',
-                error
-            );
-        }
+    } catch (error) {
+        console.error(
+            'コマンド同期エラー:',
+            error
+        );
     }
-);
-
+});
 
 // ==============================
 // インタラクション
@@ -1045,8 +724,6 @@ client.on(
                             'スプラ募集'
                         );
 
-
-                // 募集種類
                 const typeInput =
                     new TextInputBuilder()
                         .setCustomId(
@@ -1064,8 +741,6 @@ client.on(
                         .setRequired(true)
                         .setMaxLength(100);
 
-
-                // 募集内容
                 const contentInput =
                     new TextInputBuilder()
                         .setCustomId(
@@ -1083,8 +758,6 @@ client.on(
                         .setRequired(true)
                         .setMaxLength(1000);
 
-
-                // 人数
                 const playersInput =
                     new TextInputBuilder()
                         .setCustomId(
@@ -1101,8 +774,6 @@ client.on(
                         )
                         .setRequired(true);
 
-
-                // 開始時刻
                 const startTimeInput =
                     new TextInputBuilder()
                         .setCustomId(
@@ -1112,15 +783,13 @@ client.on(
                             '開始時刻'
                         )
                         .setPlaceholder(
-                            '例：22:00 または 2026/09/26 22:00'
+                            '例：21:30'
                         )
                         .setStyle(
                             TextInputStyle.Short
                         )
                         .setRequired(true);
 
-
-                // 終了時刻
                 const endTimeInput =
                     new TextInputBuilder()
                         .setCustomId(
@@ -1130,16 +799,14 @@ client.on(
                             '終了時刻'
                         )
                         .setPlaceholder(
-                            '例：23:00 または 2026/09/26 23:00'
+                            '例：23:00'
                         )
                         .setStyle(
                             TextInputStyle.Short
                         )
                         .setRequired(true);
 
-
                 modal.addComponents(
-
                     new ActionRowBuilder()
                         .addComponents(
                             typeInput
@@ -1164,9 +831,7 @@ client.on(
                         .addComponents(
                             endTimeInput
                         )
-
                 );
-
 
                 await interaction.showModal(
                     modal
@@ -1174,7 +839,6 @@ client.on(
 
                 return;
             }
-
 
             // ==========================
             // モーダル送信
@@ -1191,34 +855,28 @@ client.on(
                         'recruitment_type'
                     );
 
-
                 const content =
                     interaction.fields.getTextInputValue(
                         'recruitment_content'
                     );
-
 
                 const playersText =
                     interaction.fields.getTextInputValue(
                         'recruitment_players'
                     );
 
-
                 const startTimeText =
                     interaction.fields.getTextInputValue(
                         'recruitment_start_time'
                     );
-
 
                 const endTimeText =
                     interaction.fields.getTextInputValue(
                         'recruitment_end_time'
                     );
 
-
                 const maxPlayers =
                     Number(playersText);
-
 
                 if (
                     !Number.isInteger(
@@ -1227,42 +885,29 @@ client.on(
                     maxPlayers < 2 ||
                     maxPlayers > 8
                 ) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 募集人数は2〜8人で指定してください。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 const startTime =
                     parseTime(
                         startTimeText
                     );
 
-
                 if (!startTime) {
-
                     await interaction.reply({
-
                         content:
-                            '❌ 開始時刻の形式が正しくありません。\n例：22:00',
-
-                        ephemeral:
-                            true
-
+                            '❌ 開始時刻の形式が正しくありません。\n例：21:30',
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 const endTime =
                     parseEndTime(
@@ -1270,44 +915,27 @@ client.on(
                         startTime
                     );
 
-
                 if (!endTime) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 終了時刻の形式が正しくありません。\n例：23:00',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (
                     endTime <= startTime
                 ) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 終了時刻は開始時刻より後にしてください。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
-
-                // ==========================
-                // ロール選択
-                // ==========================
 
                 const roleSelect =
                     new RoleSelectMenuBuilder()
@@ -1315,44 +943,17 @@ client.on(
                             `recruitment_roles_${interaction.user.id}`
                         )
                         .setPlaceholder(
-                            '参加条件にするロールを選択'
+                            '参加条件にするロールを選択（未選択なら全員）'
                         )
-                        .setMinValues(1)
+                        .setMinValues(0)
                         .setMaxValues(10);
 
-
-                const roleRow =
+                const row =
                     new ActionRowBuilder()
                         .addComponents(
                             roleSelect
                         );
 
-
-                // ==========================
-                // 全員ボタン
-                // ==========================
-
-                const everyoneButton =
-                    new ButtonBuilder()
-                        .setCustomId(
-                            `recruitment_everyone_${interaction.user.id}`
-                        )
-                        .setLabel(
-                            '全員'
-                        )
-                        .setStyle(
-                            ButtonStyle.Primary
-                        );
-
-
-                const everyoneRow =
-                    new ActionRowBuilder()
-                        .addComponents(
-                            everyoneButton
-                        );
-
-
-                // 募集データを一時保存
                 interaction.client
                     .recruitmentDrafts
                     .set(
@@ -1366,116 +967,16 @@ client.on(
                         }
                     );
 
-
                 await interaction.reply({
-
                     content:
-                        '参加条件を選択してください。\n' +
-                        'ロールを指定する場合は上から選択、全員で募集する場合は「全員」を押してください。',
-
-                    components: [
-                        roleRow,
-                        everyoneRow
-                    ],
-
-                    ephemeral:
-                        true
-
+                        '参加条件にするロールを選択してください。\n' +
+                        'ロールを選択しない場合は @everyone で募集します。',
+                    components: [row],
+                    ephemeral: true
                 });
 
                 return;
             }
-
-
-            // ==========================
-            // 全員ボタン
-            // ==========================
-
-            if (
-                interaction.isButton() &&
-                interaction.customId.startsWith(
-                    'recruitment_everyone_'
-                )
-            ) {
-
-                const userId =
-                    interaction.customId.replace(
-                        'recruitment_everyone_',
-                        ''
-                    );
-
-
-                if (
-                    interaction.user.id !==
-                    userId
-                ) {
-                    return;
-                }
-
-
-                const draft =
-                    interaction.client
-                        .recruitmentDrafts
-                        .get(userId);
-
-
-                if (!draft) {
-
-                    await interaction.update({
-
-                        content:
-                            '❌ 募集情報の有効期限が切れています。もう一度 /募集 を実行してください。',
-
-                        components: []
-
-                    });
-
-                    return;
-                }
-
-
-                await interaction.update({
-
-                    content:
-                        '✅ 募集を作成しています...',
-
-                    components: []
-
-                });
-
-
-                await createRecruitment(
-
-                    interaction,
-
-                    {
-                        ...draft,
-
-                        roleIds: []
-
-                    }
-
-                );
-
-
-                interaction.client
-                    .recruitmentDrafts
-                    .delete(userId);
-
-
-                await interaction.editReply({
-
-                    content:
-                        '✅ 募集を作成しました！',
-
-                    components: []
-
-                });
-
-
-                return;
-            }
-
 
             // ==========================
             // ロール選択
@@ -1494,7 +995,6 @@ client.on(
                         ''
                     );
 
-
                 if (
                     interaction.user.id !==
                     userId
@@ -1502,74 +1002,50 @@ client.on(
                     return;
                 }
 
-
                 const draft =
                     interaction.client
                         .recruitmentDrafts
                         .get(userId);
 
-
                 if (!draft) {
-
                     await interaction.update({
-
                         content:
                             '❌ 募集情報の有効期限が切れています。もう一度 /募集 を実行してください。',
-
                         components: []
-
                     });
 
                     return;
                 }
 
-
                 const roleIds =
                     interaction.values;
 
-
                 await interaction.update({
-
                     content:
                         '✅ 募集を作成しています...',
-
                     components: []
-
                 });
 
-
                 await createRecruitment(
-
                     interaction,
-
                     {
                         ...draft,
-
                         roleIds
-
                     }
-
                 );
-
 
                 interaction.client
                     .recruitmentDrafts
                     .delete(userId);
 
-
                 await interaction.editReply({
-
                     content:
                         '✅ 募集を作成しました！',
-
                     components: []
-
                 });
-
 
                 return;
             }
-
 
             // ==========================
             // 参加
@@ -1588,58 +1064,38 @@ client.on(
                         ''
                     );
 
-
                 const recruitment =
                     recruitments.get(id);
 
-
                 if (!recruitment) {
-
                     await interaction.reply({
-
                         content:
                             '❌ この募集は見つかりません。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (recruitment.closed) {
-
                     await interaction.reply({
-
                         content:
                             '❌ この募集は終了しています。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (recruitment.started) {
-
                     await interaction.reply({
-
                         content:
                             '❌ この募集はすでに開始されています。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (
                     recruitment.participants
@@ -1647,44 +1103,29 @@ client.on(
                             interaction.user.id
                         )
                 ) {
-
                     await interaction.reply({
-
                         content:
                             '❌ すでに参加しています。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (
                     recruitment.participants.length >=
                     recruitment.maxPlayers
                 ) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 定員に達しています。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
 
-
-                // ==========================
                 // ロール条件
-                // ==========================
-
                 if (
                     recruitment.roleIds.length > 0
                 ) {
@@ -1696,7 +1137,6 @@ client.on(
                                 interaction.user.id
                             );
 
-
                     const hasRole =
                         recruitment.roleIds
                             .some(
@@ -1707,53 +1147,39 @@ client.on(
                                         )
                             );
 
-
                     if (!hasRole) {
-
                         await interaction.reply({
-
                             content:
                                 '❌ この募集に参加するためのロールを持っていません。',
-
-                            ephemeral:
-                                true
-
+                            ephemeral: true
                         });
 
                         return;
                     }
                 }
 
-
                 recruitment.participants.push(
                     interaction.user.id
                 );
 
-
                 await interaction.deferUpdate();
-
 
                 if (
                     recruitment.participants.length >=
                     recruitment.maxPlayers
                 ) {
-
                     await closeRecruitment(
                         recruitment,
                         '定員に達しました'
                     );
-
                 } else {
-
                     await updateRecruitmentMessage(
                         recruitment
                     );
                 }
 
-
                 return;
             }
-
 
             // ==========================
             // 退出
@@ -1772,77 +1198,51 @@ client.on(
                         ''
                     );
 
-
                 const recruitment =
                     recruitments.get(id);
 
-
                 if (!recruitment) {
-
                     await interaction.reply({
-
                         content:
                             '❌ この募集は見つかりません。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (recruitment.closed) {
-
                     await interaction.reply({
-
                         content:
                             '❌ この募集は終了しています。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (recruitment.started) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 開始後は退出できません。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (
                     interaction.user.id ===
                     recruitment.hostId
                 ) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 主催者は退出できません。終了する場合は「募集終了」を押してください。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 const index =
                     recruitment.participants
@@ -1850,22 +1250,15 @@ client.on(
                             interaction.user.id
                         );
 
-
                 if (index === -1) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 参加していません。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 recruitment.participants
                     .splice(
@@ -1873,18 +1266,14 @@ client.on(
                         1
                     );
 
-
                 await interaction.deferUpdate();
-
 
                 await updateRecruitmentMessage(
                     recruitment
                 );
 
-
                 return;
             }
-
 
             // ==========================
             // 募集終了
@@ -1903,57 +1292,38 @@ client.on(
                         ''
                     );
 
-
                 const recruitment =
                     recruitments.get(id);
 
-
                 if (!recruitment) {
-
                     await interaction.reply({
-
                         content:
                             '❌ この募集は見つかりません。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
-
 
                 if (
                     interaction.user.id !==
                     recruitment.hostId
                 ) {
-
                     await interaction.reply({
-
                         content:
                             '❌ 募集を終了できるのは主催者だけです。',
-
-                        ephemeral:
-                            true
-
+                        ephemeral: true
                     });
 
                     return;
                 }
 
-
                 await interaction.deferUpdate();
 
-
                 await closeRecruitment(
-
                     recruitment,
-
                     '主催者が募集を終了しました'
-
                 );
-
 
                 return;
             }
@@ -1965,35 +1335,25 @@ client.on(
                 error
             );
 
-
             if (
                 !interaction.replied &&
                 !interaction.deferred
             ) {
-
                 await interaction.reply({
-
                     content:
                         '❌ エラーが発生しました。',
-
-                    ephemeral:
-                        true
-
-                }).catch(
-                    () => {}
-                );
+                    ephemeral: true
+                }).catch(() => {});
             }
         }
     }
 );
-
 
 // ==============================
 // Token確認
 // ==============================
 
 if (!TOKEN) {
-
     console.error(
         '❌ DISCORD_TOKEN が設定されていません。'
     );
@@ -2001,11 +1361,8 @@ if (!TOKEN) {
     process.exit(1);
 }
 
-
 // ==============================
 // ログイン
 // ==============================
 
-client.login(
-    TOKEN
-);
+client.login(TOKEN);
