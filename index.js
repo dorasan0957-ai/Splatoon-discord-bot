@@ -965,7 +965,7 @@ client.on(
                             '募集対象を選択'
                         )
                         .setMinValues(1)
-                        .setMaxValues(1)
+                        .setMaxValues(6)
                         .addOptions(
                             roleOptions
                         );
