@@ -547,7 +547,7 @@ async function createRecruitment(
     const recruitmentId =
         `${Date.now()}_${Math.random()
             .toString(36)
-            .slice(2, 8)}`;
+            .slice(2, 10)}`;
 
     const recruitment = {
         id: recruitmentId,
@@ -826,7 +826,7 @@ client.on(
                             '募集人数'
                         )
                         .setPlaceholder(
-                            '2〜8'
+                            '2〜10'
                         )
                         .setStyle(
                             TextInputStyle.Short
@@ -942,11 +942,11 @@ client.on(
                         maxPlayers
                     ) ||
                     maxPlayers < 2 ||
-                    maxPlayers > 8
+                    maxPlayers > 10
                 ) {
                     await interaction.reply({
                         content:
-                            '❌ 募集人数は2〜8人で指定してください。',
+                            '❌ 募集人数は2〜10人で指定してください。',
                         ephemeral: true
                     });
 
