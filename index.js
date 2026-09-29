@@ -1,3 +1,5 @@
+process.env.TZ = 'Asia/Tokyo';
+
 const {
     Client,
     GatewayIntentBits,
