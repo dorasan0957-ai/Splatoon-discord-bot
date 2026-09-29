@@ -66,6 +66,17 @@ const POWER_ROLES = [
 // 時刻処理
 // ==============================
 
+function formatJapaneseDateTime(date) {
+    return new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    }).format(date);
+}
 function parseTime(input) {
     const now = new Date();
 
@@ -308,14 +319,10 @@ async function updateRecruitmentMessage(
                 .join(' ');
 
         const startText =
-            `<t:${Math.floor(
-                recruitment.startTime.getTime() / 1000
-            )}:F>`;
+    formatJapaneseDateTime(recruitment.startTime);
 
-        const endText =
-            `<t:${Math.floor(
-                recruitment.endTime.getTime() / 1000
-            )}:F>`;
+const endText =
+    formatJapaneseDateTime(recruitment.endTime);
 
         let statusText =
             '🟢 募集中';
@@ -460,14 +467,10 @@ async function closeRecruitment(
                 .join(' ');
 
         const startText =
-            `<t:${Math.floor(
-                recruitment.startTime.getTime() / 1000
-            )}:F>`;
+    formatJapaneseDateTime(recruitment.startTime);
 
-        const endText =
-            `<t:${Math.floor(
-                recruitment.endTime.getTime() / 1000
-            )}:F>`;
+const endText =
+    formatJapaneseDateTime(recruitment.endTime);
 
         const embed =
             new EmbedBuilder()
@@ -659,14 +662,10 @@ async function createRecruitment(
             : '@everyone';
 
     const startText =
-        `<t:${Math.floor(
-            startTime.getTime() / 1000
-        )}:F>`;
+    formatJapaneseDateTime(recruitment.startTime);
 
-    const endText =
-        `<t:${Math.floor(
-            endTime.getTime() / 1000
-        )}:F>`;
+const endText =
+    formatJapaneseDateTime(recruitment.endTime);
 
     const embed =
         new EmbedBuilder()
