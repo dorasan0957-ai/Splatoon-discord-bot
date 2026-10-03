@@ -77,6 +77,7 @@ function formatJapaneseDateTime(date) {
         hour12: false
     }).format(date);
 }
+
 function parseTime(input) {
     const now = new Date();
 
@@ -319,10 +320,10 @@ async function updateRecruitmentMessage(
                 .join(' ');
 
         const startText =
-    formatJapaneseDateTime(recruitment.startTime);
+            formatJapaneseDateTime(recruitment.startTime);
 
-const endText =
-    formatJapaneseDateTime(recruitment.endTime);
+        const endText =
+            formatJapaneseDateTime(recruitment.endTime);
 
         let statusText =
             '🟢 募集中';
@@ -391,7 +392,6 @@ const endText =
                         )
                         .setDisabled(
                             recruitment.closed ||
-                            recruitment.started ||
                             recruitment.participants.length >=
                                 recruitment.maxPlayers
                         ),
@@ -405,8 +405,7 @@ const endText =
                             ButtonStyle.Secondary
                         )
                         .setDisabled(
-                            recruitment.closed ||
-                            recruitment.started
+                            recruitment.closed
                         ),
 
                     new ButtonBuilder()
@@ -434,6 +433,7 @@ const endText =
         );
     }
 }
+
 // ==============================
 // 募集終了
 // ==============================
@@ -467,10 +467,10 @@ async function closeRecruitment(
                 .join(' ');
 
         const startText =
-    formatJapaneseDateTime(recruitment.startTime);
+            formatJapaneseDateTime(recruitment.startTime);
 
-const endText =
-    formatJapaneseDateTime(recruitment.endTime);
+        const endText =
+            formatJapaneseDateTime(recruitment.endTime);
 
         const embed =
             new EmbedBuilder()
@@ -537,14 +537,28 @@ async function startRecruitment(
         return;
     }
 
-    recruitment.started = true;
+    // ★ 今回変更した部分
+    // 開始時刻になっても定員未達なら募集を継続する
+    if (
+        recruitment.participants.length <
+        recruitment.maxPlayers
+    ) {
 
-    await updateRecruitmentMessage(
-        recruitment
+        console.log(
+            `募集 ${recruitment.id} は開始時刻になりましたが、定員未達のため募集を継続します`
+        );
+
+        return;
+    }
+
+    // 開始時刻までに定員に達していた場合は募集終了
+    await closeRecruitment(
+        recruitment,
+        '開始時刻までに定員に達しました'
     );
 
     console.log(
-        `募集 ${recruitment.id} が開始しました`
+        `募集 ${recruitment.id} が開始時刻に定員到達したため終了しました`
     );
 }
 
@@ -662,10 +676,10 @@ async function createRecruitment(
             : '@everyone';
 
     const startText =
-    formatJapaneseDateTime(recruitment.startTime);
+        formatJapaneseDateTime(recruitment.startTime);
 
-const endText =
-    formatJapaneseDateTime(recruitment.endTime);
+    const endText =
+        formatJapaneseDateTime(recruitment.endTime);
 
     const embed =
         new EmbedBuilder()
@@ -1126,6 +1140,7 @@ client.on(
 
                 return;
             }
+
             // ==========================
             // 通話選択
             // ==========================
@@ -1426,19 +1441,6 @@ client.on(
                 }
 
                 if (
-                    recruitment.started
-                ) {
-
-                    await interaction.reply({
-                        content:
-                            '❌ この募集はすでに開始されています。',
-                        ephemeral: true
-                    });
-
-                    return;
-                }
-
-                if (
                     recruitment.participants
                         .includes(
                             interaction.user.id
@@ -1571,19 +1573,6 @@ client.on(
                     await interaction.reply({
                         content:
                             '❌ この募集は終了しています。',
-                        ephemeral: true
-                    });
-
-                    return;
-                }
-
-                if (
-                    recruitment.started
-                ) {
-
-                    await interaction.reply({
-                        content:
-                            '❌ 開始後は退出できません。',
                         ephemeral: true
                     });
 
